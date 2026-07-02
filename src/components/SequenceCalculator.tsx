@@ -6,7 +6,7 @@ import { D20_VALUES, EMPTY_MODIFIERS, finalScore, fmtPercent } from '@/lib/math'
 import { ModifierInputs } from './ModifierInputs';
 import { NumberInput } from './NumberInput';
 
-type StepType = 'target' | 'duel' | 'passInterception';
+type StepType = 'target' | 'duel' | 'interceptionVsPass';
 
 type SequenceStep = {
   id: string;
@@ -88,21 +88,30 @@ function calculateSequence(steps: SequenceStep[]): StepResult[] {
   for (const step of steps) {
     const enteredWays = branches.reduce((sum, branch) => sum + branch.ways, 0);
     const nextBranches: Branch[] = [];
-    const outcomesThisStep = (step.type === 'duel' || step.type === 'passInterception') ? 400 : 20;
+    const outcomesThisStep = step.type === 'duel' ? 400 : 20;
     totalWays *= outcomesThisStep;
 
     for (const branch of branches) {
-      if (step.type === 'duel' || step.type === 'passInterception') {
+      if (step.type === 'duel') {
         for (const rollA of D20_VALUES) {
           for (const rollB of D20_VALUES) {
             const scoreA = finalScore(rollA, step.bonus, step.modifiers);
             const scoreB = finalScore(rollB, step.opponentBonus, step.opponentModifiers);
 
-            // Pentru Roll vs Roll și Pasă vs Intercepție, lanțul continuă când primul roll bate al doilea roll.
-            // La Pasă vs Intercepție: pasa trece dacă intercepția adversarului pierde roll-ul.
             if (scoreA > scoreB) {
               nextBranches.push({ previousScore: scoreA, ways: branch.ways });
             }
+          }
+        }
+      } else if (step.type === 'interceptionVsPass') {
+        for (const roll of D20_VALUES) {
+          const interceptionScore = finalScore(roll, step.bonus, step.modifiers);
+          const passContinues = interceptionScore <= step.target;
+
+          // Atipic: aici pasul reușește pentru lanț dacă intercepția pierde.
+          // Ținta reprezintă valoarea pasei, iar bonusul/modificatorii sunt ai intercepției.
+          if (passContinues) {
+            nextBranches.push({ previousScore: step.target, ways: branch.ways });
           }
         }
       } else {
@@ -179,7 +188,7 @@ export function SequenceCalculator() {
       {
         id: crypto.randomUUID(),
         name: 'Pasă',
-        type: 'passInterception',
+        type: 'interceptionVsPass',
         bonus: 4,
         modifiers: freshModifiers(),
         target: 15,
@@ -245,28 +254,32 @@ export function SequenceCalculator() {
                 <select value={step.type} onChange={(e) => updateStep(step.id, { type: e.target.value as StepType })}>
                   <option value="target">Roll vs Țintă</option>
                   <option value="duel">Roll vs Roll</option>
-                  <option value="passInterception">Pasă vs Intercepție</option>
+                  <option value="interceptionVsPass">Intercepție vs Pasă</option>
                 </select>
               </label>
             </div>
 
             <div className="grid two">
-              <NumberInput label="Bonus" value={step.bonus} onChange={(value) => updateStep(step.id, { bonus: value })} />
-              {step.type === 'target' ? (
-                <NumberInput label="Țintă" value={step.target} onChange={(value) => updateStep(step.id, { target: value })} />
+              <NumberInput
+                label={step.type === 'interceptionVsPass' ? 'Bonus intercepție' : 'Bonus'}
+                value={step.bonus}
+                onChange={(value) => updateStep(step.id, { bonus: value })}
+              />
+              {step.type === 'duel' ? (
+                <NumberInput label="Bonus al doilea roll" value={step.opponentBonus} onChange={(value) => updateStep(step.id, { opponentBonus: value })} />
               ) : (
                 <NumberInput
-                  label={step.type === 'passInterception' ? 'Bonus intercepție' : 'Bonus al doilea roll'}
-                  value={step.opponentBonus}
-                  onChange={(value) => updateStep(step.id, { opponentBonus: value })}
+                  label={step.type === 'interceptionVsPass' ? 'Valoare pasă' : 'Țintă'}
+                  value={step.target}
+                  onChange={(value) => updateStep(step.id, { target: value })}
                 />
               )}
             </div>
 
-            <ModifierInputs title={`Modificatori ${step.name || `pas ${index + 1}`}`} value={step.modifiers} onChange={(value) => updateStepModifiers(step.id, value)} />
+            <ModifierInputs title={step.type === 'interceptionVsPass' ? `Modificatori intercepție ${step.name || `pas ${index + 1}`}` : `Modificatori ${step.name || `pas ${index + 1}`}`} value={step.modifiers} onChange={(value) => updateStepModifiers(step.id, value)} />
 
-            {(step.type === 'duel' || step.type === 'passInterception') && (
-              <ModifierInputs title={step.type === 'passInterception' ? `Modificatori intercepție ${step.name || `pas ${index + 1}`}` : `Modificatori al doilea roll ${step.name || `pas ${index + 1}`}`} value={step.opponentModifiers} onChange={(value) => updateOpponentModifiers(step.id, value)} />
+            {step.type === 'duel' && (
+              <ModifierInputs title={`Modificatori al doilea roll ${step.name || `pas ${index + 1}`}`} value={step.opponentModifiers} onChange={(value) => updateOpponentModifiers(step.id, value)} />
             )}
 
             <div className="sequenceResultGrid">
