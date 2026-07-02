@@ -6,7 +6,7 @@ import { D20_VALUES, EMPTY_MODIFIERS, finalScore, fmtPercent } from '@/lib/math'
 import { ModifierInputs } from './ModifierInputs';
 import { NumberInput } from './NumberInput';
 
-type StepType = 'target' | 'previous';
+type StepType = 'target' | 'previous' | 'duel';
 type PreviousPassMode = 'beat' | 'notBeat';
 
 type SequenceStep = {
@@ -17,6 +17,8 @@ type SequenceStep = {
   modifiers: ModifierState;
   target: number;
   previousPassMode: PreviousPassMode;
+  opponentBonus: number;
+  opponentModifiers: ModifierState;
 };
 
 type Branch = {
@@ -42,20 +44,13 @@ function defaultSteps(): SequenceStep[] {
     {
       id: crypto.randomUUID(),
       name: 'Centrare',
-      type: 'target',
+      type: 'duel',
       bonus: 4,
       modifiers: freshModifiers(),
       target: 8,
       previousPassMode: 'beat',
-    },
-    {
-      id: crypto.randomUUID(),
-      name: 'Portar',
-      type: 'previous',
-      bonus: 4,
-      modifiers: freshModifiers(),
-      target: 8,
-      previousPassMode: 'notBeat',
+      opponentBonus: 4,
+      opponentModifiers: freshModifiers(),
     },
     {
       id: crypto.randomUUID(),
@@ -65,6 +60,8 @@ function defaultSteps(): SequenceStep[] {
       modifiers: freshModifiers(),
       target: 8,
       previousPassMode: 'beat',
+      opponentBonus: 4,
+      opponentModifiers: freshModifiers(),
     },
     {
       id: crypto.randomUUID(),
@@ -74,6 +71,8 @@ function defaultSteps(): SequenceStep[] {
       modifiers: freshModifiers(),
       target: 8,
       previousPassMode: 'beat',
+      opponentBonus: 4,
+      opponentModifiers: freshModifiers(),
     },
   ];
 }
@@ -94,24 +93,38 @@ function calculateSequence(steps: SequenceStep[]): StepResult[] {
   for (const step of steps) {
     const enteredWays = branches.reduce((sum, branch) => sum + branch.ways, 0);
     const nextBranches: Branch[] = [];
-    totalWays *= 20;
+    const outcomesThisStep = step.type === 'duel' ? 400 : 20;
+    totalWays *= outcomesThisStep;
 
     for (const branch of branches) {
-      for (const roll of D20_VALUES) {
-        const score = finalScore(roll, step.bonus, step.modifiers);
-        let passes = false;
-        let nextPreviousScore = score;
+      if (step.type === 'duel') {
+        for (const rollA of D20_VALUES) {
+          for (const rollB of D20_VALUES) {
+            const scoreA = finalScore(rollA, step.bonus, step.modifiers);
+            const scoreB = finalScore(rollB, step.opponentBonus, step.opponentModifiers);
 
-        if (step.type === 'target') {
-          passes = score > step.target;
-        } else {
-          const beatsPrevious = score > branch.previousScore;
-          passes = step.previousPassMode === 'beat' ? beatsPrevious : !beatsPrevious;
-          nextPreviousScore = step.previousPassMode === 'beat' ? score : branch.previousScore;
+            if (scoreA > scoreB) {
+              nextBranches.push({ previousScore: scoreA, ways: branch.ways });
+            }
+          }
         }
+      } else {
+        for (const roll of D20_VALUES) {
+          const score = finalScore(roll, step.bonus, step.modifiers);
+          let passes = false;
+          let nextPreviousScore = score;
 
-        if (passes) {
-          nextBranches.push({ previousScore: nextPreviousScore, ways: branch.ways });
+          if (step.type === 'target') {
+            passes = score > step.target;
+          } else {
+            const beatsPrevious = score > branch.previousScore;
+            passes = step.previousPassMode === 'beat' ? beatsPrevious : !beatsPrevious;
+            nextPreviousScore = step.previousPassMode === 'beat' ? score : branch.previousScore;
+          }
+
+          if (passes) {
+            nextBranches.push({ previousScore: nextPreviousScore, ways: branch.ways });
+          }
         }
       }
     }
@@ -122,7 +135,7 @@ function calculateSequence(steps: SequenceStep[]): StepResult[] {
       enteredWays,
       passedWays,
       totalWays,
-      conditionalPercent: enteredWays ? (passedWays / (enteredWays * 20)) * 100 : 0,
+      conditionalPercent: enteredWays ? (passedWays / (enteredWays * outcomesThisStep)) * 100 : 0,
       cumulativePercent: (passedWays / totalWays) * 100,
     });
 
@@ -145,6 +158,10 @@ export function SequenceCalculator() {
     updateStep(id, { modifiers });
   }
 
+  function updateOpponentModifiers(id: string, opponentModifiers: ModifierState) {
+    updateStep(id, { opponentModifiers });
+  }
+
   function addStep() {
     setSteps((current) => [
       ...current,
@@ -156,6 +173,8 @@ export function SequenceCalculator() {
         modifiers: freshModifiers(),
         target: 8,
         previousPassMode: 'beat',
+        opponentBonus: 4,
+        opponentModifiers: freshModifiers(),
       },
     ]);
   }
@@ -203,6 +222,7 @@ export function SequenceCalculator() {
                 <select value={step.type} onChange={(e) => updateStep(step.id, { type: e.target.value as StepType })}>
                   <option value="target">Roll vs Țintă</option>
                   <option value="previous">Roll vs Scorul anterior</option>
+                  <option value="duel">Roll vs Roll</option>
                 </select>
               </label>
             </div>
@@ -211,7 +231,7 @@ export function SequenceCalculator() {
               <NumberInput label="Bonus" value={step.bonus} onChange={(value) => updateStep(step.id, { bonus: value })} />
               {step.type === 'target' ? (
                 <NumberInput label="Țintă" value={step.target} onChange={(value) => updateStep(step.id, { target: value })} />
-              ) : (
+              ) : step.type === 'previous' ? (
                 <label className="field">
                   <span>Condiție de trecere</span>
                   <select value={step.previousPassMode} onChange={(e) => updateStep(step.id, { previousPassMode: e.target.value as PreviousPassMode })}>
@@ -219,10 +239,16 @@ export function SequenceCalculator() {
                     <option value="notBeat">Pasul reușește dacă NU depășește scorul anterior</option>
                   </select>
                 </label>
+              ) : (
+                <NumberInput label="Bonus al doilea roll" value={step.opponentBonus} onChange={(value) => updateStep(step.id, { opponentBonus: value })} />
               )}
             </div>
 
             <ModifierInputs title={`Modificatori ${step.name || `pas ${index + 1}`}`} value={step.modifiers} onChange={(value) => updateStepModifiers(step.id, value)} />
+
+            {step.type === 'duel' && (
+              <ModifierInputs title={`Modificatori al doilea roll ${step.name || `pas ${index + 1}`}`} value={step.opponentModifiers} onChange={(value) => updateOpponentModifiers(step.id, value)} />
+            )}
 
             <div className="sequenceResultGrid">
               <div className="statCard">
