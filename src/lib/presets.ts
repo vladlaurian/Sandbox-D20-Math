@@ -8,6 +8,6 @@ export const PRESETS: Preset[] = [
   { name: 'Finishing vs Passive Reflexes', mode: 'duel', aLabel: 'Finishing', bLabel: 'Passive Reflexes' },
   { name: 'Heading vs Passive Aerial', mode: 'duel', aLabel: 'Heading', bLabel: 'Passive Aerial' },
   { name: 'Heading vs Passive Reflexes', mode: 'duel', aLabel: 'Heading', bLabel: 'Passive Reflexes' },
-  { name: 'Crossing vs țintă fixă 8', mode: 'target', aLabel: 'Crossing', defaultTarget: 8 },
+  { name: 'Roll vs țintă fixă 15', mode: 'target', aLabel: 'Acțiune', defaultTarget: 15 },
   { name: 'Goalkeeper Claiming vs Crossing Score', mode: 'duel', aLabel: 'Goalkeeper Claiming', bLabel: 'Crossing Score' },
 ];

@@ -12,7 +12,7 @@ import { RollVsRollSide } from '@/types/sandbox';
 
 export default function Home() {
   const [targetBonus, setTargetBonus] = useState(4);
-  const [target, setTarget] = useState(8);
+  const [target, setTarget] = useState(15);
   const [targetModifiers, setTargetModifiers] = useState(EMPTY_MODIFIERS);
   const [a, setA] = useState<RollVsRollSide>({ label: 'Actor A', bonus: 6, modifiers: EMPTY_MODIFIERS });
   const [b, setB] = useState<RollVsRollSide>({ label: 'Actor B', bonus: 6, modifiers: EMPTY_MODIFIERS });
@@ -21,7 +21,7 @@ export default function Home() {
     const preset = PRESETS.find((p) => p.name === name);
     if (!preset) return;
     if (preset.mode === 'target') {
-      setTarget(preset.defaultTarget ?? 8);
+      setTarget(preset.defaultTarget ?? 15);
       setTargetBonus(4);
       setTargetModifiers(EMPTY_MODIFIERS);
       document.getElementById('target')?.scrollIntoView({ behavior: 'smooth' });

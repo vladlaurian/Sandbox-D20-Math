@@ -6,8 +6,7 @@ import { D20_VALUES, EMPTY_MODIFIERS, finalScore, fmtPercent } from '@/lib/math'
 import { ModifierInputs } from './ModifierInputs';
 import { NumberInput } from './NumberInput';
 
-type StepType = 'target' | 'previous' | 'duel';
-type PreviousPassMode = 'beat' | 'notBeat';
+type StepType = 'target' | 'duel' | 'passInterception';
 
 type SequenceStep = {
   id: string;
@@ -16,7 +15,6 @@ type SequenceStep = {
   bonus: number;
   modifiers: ModifierState;
   target: number;
-  previousPassMode: PreviousPassMode;
   opponentBonus: number;
   opponentModifiers: ModifierState;
 };
@@ -47,8 +45,7 @@ function defaultSteps(): SequenceStep[] {
       type: 'duel',
       bonus: 4,
       modifiers: freshModifiers(),
-      target: 8,
-      previousPassMode: 'beat',
+      target: 15,
       opponentBonus: 4,
       opponentModifiers: freshModifiers(),
     },
@@ -58,8 +55,7 @@ function defaultSteps(): SequenceStep[] {
       type: 'target',
       bonus: 4,
       modifiers: freshModifiers(),
-      target: 8,
-      previousPassMode: 'beat',
+      target: 15,
       opponentBonus: 4,
       opponentModifiers: freshModifiers(),
     },
@@ -69,8 +65,7 @@ function defaultSteps(): SequenceStep[] {
       type: 'target',
       bonus: 4,
       modifiers: freshModifiers(),
-      target: 8,
-      previousPassMode: 'beat',
+      target: 15,
       opponentBonus: 4,
       opponentModifiers: freshModifiers(),
     },
@@ -93,16 +88,18 @@ function calculateSequence(steps: SequenceStep[]): StepResult[] {
   for (const step of steps) {
     const enteredWays = branches.reduce((sum, branch) => sum + branch.ways, 0);
     const nextBranches: Branch[] = [];
-    const outcomesThisStep = step.type === 'duel' ? 400 : 20;
+    const outcomesThisStep = (step.type === 'duel' || step.type === 'passInterception') ? 400 : 20;
     totalWays *= outcomesThisStep;
 
     for (const branch of branches) {
-      if (step.type === 'duel') {
+      if (step.type === 'duel' || step.type === 'passInterception') {
         for (const rollA of D20_VALUES) {
           for (const rollB of D20_VALUES) {
             const scoreA = finalScore(rollA, step.bonus, step.modifiers);
             const scoreB = finalScore(rollB, step.opponentBonus, step.opponentModifiers);
 
+            // Pentru Roll vs Roll și Pasă vs Intercepție, lanțul continuă când primul roll bate al doilea roll.
+            // La Pasă vs Intercepție: pasa trece dacă intercepția adversarului pierde roll-ul.
             if (scoreA > scoreB) {
               nextBranches.push({ previousScore: scoreA, ways: branch.ways });
             }
@@ -111,19 +108,10 @@ function calculateSequence(steps: SequenceStep[]): StepResult[] {
       } else {
         for (const roll of D20_VALUES) {
           const score = finalScore(roll, step.bonus, step.modifiers);
-          let passes = false;
-          let nextPreviousScore = score;
-
-          if (step.type === 'target') {
-            passes = score > step.target;
-          } else {
-            const beatsPrevious = score > branch.previousScore;
-            passes = step.previousPassMode === 'beat' ? beatsPrevious : !beatsPrevious;
-            nextPreviousScore = step.previousPassMode === 'beat' ? score : branch.previousScore;
-          }
+          const passes = score > step.target;
 
           if (passes) {
-            nextBranches.push({ previousScore: nextPreviousScore, ways: branch.ways });
+            nextBranches.push({ previousScore: score, ways: branch.ways });
           }
         }
       }
@@ -171,8 +159,7 @@ export function SequenceCalculator() {
         type: 'target',
         bonus: 4,
         modifiers: freshModifiers(),
-        target: 8,
-        previousPassMode: 'beat',
+        target: 15,
         opponentBonus: 4,
         opponentModifiers: freshModifiers(),
       },
@@ -185,6 +172,41 @@ export function SequenceCalculator() {
 
   function resetCrossPreset() {
     setSteps(defaultSteps());
+  }
+
+  function resetPassDribblePreset() {
+    setSteps([
+      {
+        id: crypto.randomUUID(),
+        name: 'Pasă',
+        type: 'passInterception',
+        bonus: 4,
+        modifiers: freshModifiers(),
+        target: 15,
+        opponentBonus: 4,
+        opponentModifiers: freshModifiers(),
+      },
+      {
+        id: crypto.randomUUID(),
+        name: 'Dribling',
+        type: 'duel',
+        bonus: 4,
+        modifiers: freshModifiers(),
+        target: 15,
+        opponentBonus: 4,
+        opponentModifiers: freshModifiers(),
+      },
+      {
+        id: crypto.randomUUID(),
+        name: 'Finalizare',
+        type: 'target',
+        bonus: 4,
+        modifiers: freshModifiers(),
+        target: 15,
+        opponentBonus: 4,
+        opponentModifiers: freshModifiers(),
+      },
+    ]);
   }
 
   return (
@@ -200,6 +222,7 @@ export function SequenceCalculator() {
       <div className="sequenceActions">
         <button onClick={addStep}>+ Adaugă pas</button>
         <button onClick={resetCrossPreset}>Preset centrare</button>
+        <button onClick={resetPassDribblePreset}>Preset pasă-dribling-finalizare</button>
       </div>
 
       {steps.map((step, index) => {
@@ -221,8 +244,8 @@ export function SequenceCalculator() {
                 <span>Tip pas</span>
                 <select value={step.type} onChange={(e) => updateStep(step.id, { type: e.target.value as StepType })}>
                   <option value="target">Roll vs Țintă</option>
-                  <option value="previous">Roll vs Scorul anterior</option>
                   <option value="duel">Roll vs Roll</option>
+                  <option value="passInterception">Pasă vs Intercepție</option>
                 </select>
               </label>
             </div>
@@ -231,23 +254,19 @@ export function SequenceCalculator() {
               <NumberInput label="Bonus" value={step.bonus} onChange={(value) => updateStep(step.id, { bonus: value })} />
               {step.type === 'target' ? (
                 <NumberInput label="Țintă" value={step.target} onChange={(value) => updateStep(step.id, { target: value })} />
-              ) : step.type === 'previous' ? (
-                <label className="field">
-                  <span>Condiție de trecere</span>
-                  <select value={step.previousPassMode} onChange={(e) => updateStep(step.id, { previousPassMode: e.target.value as PreviousPassMode })}>
-                    <option value="beat">Pasul reușește dacă depășește scorul anterior</option>
-                    <option value="notBeat">Pasul reușește dacă NU depășește scorul anterior</option>
-                  </select>
-                </label>
               ) : (
-                <NumberInput label="Bonus al doilea roll" value={step.opponentBonus} onChange={(value) => updateStep(step.id, { opponentBonus: value })} />
+                <NumberInput
+                  label={step.type === 'passInterception' ? 'Bonus intercepție' : 'Bonus al doilea roll'}
+                  value={step.opponentBonus}
+                  onChange={(value) => updateStep(step.id, { opponentBonus: value })}
+                />
               )}
             </div>
 
             <ModifierInputs title={`Modificatori ${step.name || `pas ${index + 1}`}`} value={step.modifiers} onChange={(value) => updateStepModifiers(step.id, value)} />
 
-            {step.type === 'duel' && (
-              <ModifierInputs title={`Modificatori al doilea roll ${step.name || `pas ${index + 1}`}`} value={step.opponentModifiers} onChange={(value) => updateOpponentModifiers(step.id, value)} />
+            {(step.type === 'duel' || step.type === 'passInterception') && (
+              <ModifierInputs title={step.type === 'passInterception' ? `Modificatori intercepție ${step.name || `pas ${index + 1}`}` : `Modificatori al doilea roll ${step.name || `pas ${index + 1}`}`} value={step.opponentModifiers} onChange={(value) => updateOpponentModifiers(step.id, value)} />
             )}
 
             <div className="sequenceResultGrid">
